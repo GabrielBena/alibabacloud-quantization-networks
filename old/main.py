@@ -21,7 +21,7 @@ from torch.nn.parameter import Parameter
 from torchvision import transforms as T 
 
 from config import *
-import models
+import old
 from data_pre import Lighting, Preprocessor
 from utils import Logger, AverageMeter
 from utils import load_checkpoint, save_checkpoint
@@ -132,7 +132,7 @@ def main(args):
                  train_list, val_list)
     # Create model
     #num_classes = 1000 # imagenet 1000
-    model = models.create(args.arch, False, num_classes=1000)
+    model = old.create(args.arch, False, num_classes=1000)
 
     if args.adam:
         print('The optimizer is Adam !!!')
@@ -386,7 +386,7 @@ if __name__ == '__main__':
                         help="input image size, default: 224 for ImageNet")
     # model
     parser.add_argument('-a', '--arch', type=str, default='resnet50',
-                        choices=models.names())
+                        choices=old.names())
     # optimizer
     parser.add_argument('--lr', type=float, default=0.001,
                         help="learning rate of new parameters, for pretrained "

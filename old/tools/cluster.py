@@ -68,7 +68,6 @@ def main(args):
     #Q_values = [-2, -1, 0, 1, 2]
     #Q_values = [-1, 0, 1]
     
-
     all_file = sorted(os.listdir(args.root))
     for filename in all_file:
         if '.npy' in filename:

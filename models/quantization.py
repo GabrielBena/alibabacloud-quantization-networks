@@ -12,7 +12,7 @@ from torch.nn.parameter import Parameter
 import numpy as np
 import pdb
 from models.sigmoid import SigmoidT
-from scipy.cluster.vq import kmeans
+from sklearn.cluster import KMeans
 from time import time
 
 sigmoidT = SigmoidT.apply
@@ -99,7 +99,11 @@ class Quantization(nn.Module):
             assert (
                 input is not None
             ), "Provide an initial input for bias or an input to initialize"
-            centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=10)[0]
+            estimator = KMeans(n_clusters=self.n + 1, n_init=10, max_iter=10)
+            # centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=10)[0]
+            params = np.sort(input.cpu().data.numpy().reshape(-1, 1), axis=0)
+            estimator.fit(params)
+            centers = estimator.cluster_centers_.squeeze()
             centers = centers[np.argsort(centers)]
             init_data = (centers[:-1] + centers[1:]) / 2
 

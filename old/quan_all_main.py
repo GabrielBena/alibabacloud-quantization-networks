@@ -20,7 +20,7 @@ from torch.nn.parameter import Parameter
 from torchvision import transforms as T 
 
 from config import *
-import models
+import old
 from data_pre import ColorJitter, Lighting, Preprocessor
 from utils import Logger, AverageMeter
 from utils import load_checkpoint, save_checkpoint
@@ -284,7 +284,7 @@ def main(args):
     print('ac_quan_values: ', ac_quan_values)
     # Create model
     #num_classes = 1000 # imagenet 1000
-    model = models.create(args.arch, QA_flag=True, ac_quan_bias = QA_biases[args.qa_biases],
+    model = old.create(args.arch, QA_flag=True, ac_quan_bias = QA_biases[args.qa_biases],
                           ac_quan_values=ac_quan_values, ac_beta=QA_beta[args.qa_beta], num_classes=1000)
 
     # create alpha and belta
@@ -637,7 +637,7 @@ if __name__ == '__main__':
                         help="input image size, default: 224 for ImageNet")
     # model
     parser.add_argument('-a', '--arch', type=str, default='alexnet',
-                        choices=models.names())
+                        choices=old.names())
     # optimizer
     parser.add_argument('--lr', type=float, default=0.001,
                         help="learning rate of new parameters, for pretrained "

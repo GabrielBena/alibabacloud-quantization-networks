@@ -20,7 +20,7 @@ from torch.nn.parameter import Parameter
 from torchvision import transforms as T
 
 from config import *
-import models
+import old
 from data_pre import Lighting, Preprocessor
 from utils import Logger, AverageMeter
 from utils import load_checkpoint, save_checkpoint
@@ -136,7 +136,7 @@ def main(args):
     )
     # Create model
     # num_classes = 1000 # imagenet 1000
-    model = models.create(args.arch, False, num_classes=1000)
+    model = old.create(args.arch, False, num_classes=1000)
     # create alpha and belta
     count = 0
     for m in model.modules():
@@ -517,7 +517,7 @@ if __name__ == "__main__":
     )
     # model
     parser.add_argument(
-        "-a", "--arch", type=str, default="alexnet", choices=models.names()
+        "-a", "--arch", type=str, default="alexnet", choices=old.names()
     )
     # optimizer
     parser.add_argument(
