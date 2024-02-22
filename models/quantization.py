@@ -50,9 +50,6 @@ class Quantization(nn.Module):
         quan_bias=None,
         init_beta=None,
         init_T=1.0,
-        device=(
-            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-        ),
     ):
 
         super().__init__()
@@ -61,7 +58,6 @@ class Quantization(nn.Module):
             example shown in: https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/batchnorm.py
         """
         self.values = quant_values
-        self.device = device
 
         # number of sigmoids
         self.n = len(self.values) - 1
@@ -103,13 +99,15 @@ class Quantization(nn.Module):
             assert (
                 input is not None
             ), "Provide an initial input for bias or an input to initialize"
-            centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=5)[0]
+            centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=10)[0]
             centers = centers[np.argsort(centers)]
-            # print(centers)
             init_data = (centers[:-1] + centers[1:]) / 2
 
-        assert init_data.size == self.n
+        assert (
+            init_data.size == self.n
+        ), f"init_data {init_data} of size {init_data.size} != {self.n}"
         self.biases.copy_(torch.from_numpy(init_data))
+        self.biases.to(input.device)
         self.bias_inited = True
         # print('baises inited!!!')
 
@@ -126,7 +124,7 @@ class Quantization(nn.Module):
             ), "Provide an initial input for beta or an input to initialize"
             init_beta = np.abs(self.values).max() / input.abs().max()
 
-        self.beta.data = torch.Tensor([init_beta]).to(self.device)
+        self.beta.data = torch.Tensor([init_beta]).to(input.device)
         self.alpha.data = torch.reciprocal(self.beta.data)
         self.alpha_beta_inited = True
 
