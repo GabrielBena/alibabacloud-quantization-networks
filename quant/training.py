@@ -15,7 +15,7 @@ def train(model, device, train_loader, optimizer, epoch, **kwargs):
         loss.backward()
         optimizer.step()
 
-        if kwargs.get("adjust_T", False):
+        if kwargs.get("adjust_T", False) and hasattr(model, "set_temperature"):
             model.set_temperature(
                 kwargs.get("Ts")[(epoch - 1) * len(train_loader) + batch_idx]
             )
