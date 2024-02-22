@@ -9,48 +9,11 @@ from torch.nn import init
 import torch.nn as nn
 import pickle
 from torch.nn.parameter import Parameter
-from torch.autograd import Variable
 import numpy as np
 import pdb
-
-
-class SigmoidT(torch.autograd.Function):
-    """sigmoid with temperature T for training
-    we need the gradients for input and bias
-    for customization of function, refer to https://pytorch.org/docs/stable/notes/extending.html
-    """
-
-    @staticmethod
-    def forward(self, input, scales, n, b, T):
-        self.save_for_backward(input)
-        self.T = T
-        self.b = b
-        self.scales = scales
-        self.n = n
-
-        buf = torch.clamp(self.T * (input - self.b[0]), min=-10.0, max=10.0)
-        output = self.scales[0] / (1.0 + torch.exp(-buf))
-        for k in range(1, self.n):
-            buf = torch.clamp(self.T * (input - self.b[k]), min=-10.0, max=10.0)
-            output += self.scales[k] / (1.0 + torch.exp(-buf))
-        return output
-
-    @staticmethod
-    def backward(self, grad_output):
-        # set T = 1 when train binary model in the backward.
-        # self.T = 1
-        (input,) = self.saved_tensors
-        b_buf = torch.clamp(self.T * (input - self.b[0]), min=-10.0, max=10.0)
-        b_output = self.scales[0] / (1.0 + torch.exp(-b_buf))
-        temp = b_output * (1 - b_output) * self.T
-        for j in range(1, self.n):
-            b_buf = torch.clamp(self.T * (input - self.b[j]), min=-10.0, max=10.0)
-            b_output = self.scales[j] / (1.0 + torch.exp(-b_buf))
-            temp += b_output * (1 - b_output) * self.T
-        grad_input = Variable(temp) * grad_output
-        # corresponding to grad_input
-        return grad_input, None, None, None, None
-
+from models.sigmoid import SigmoidT
+from scipy.cluster.vq import kmeans
+from time import time
 
 sigmoidT = SigmoidT.apply
 
@@ -84,13 +47,15 @@ class Quantization(nn.Module):
     def __init__(
         self,
         quant_values=[-1, 0, 1],
-        quan_bias=[0],
-        init_beta=0.0,
+        quan_bias=None,
+        init_beta=None,
+        init_T=1.0,
         device=(
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         ),
     ):
-        super(Quantization, self).__init__()
+
+        super().__init__()
         """register_parameter: params w/ grad, and need to be learned
             register_buffer: params w/o grad, do not need to be learned
             example shown in: https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/batchnorm.py
@@ -107,12 +72,16 @@ class Quantization(nn.Module):
 
         boundary = np.array(quan_bias)
         self.init_scale_and_offset()
+
         self.bias_inited = False
         self.alpha_beta_inited = False
-        self.init_biases(boundary)
-        self.init_alpha_and_beta(init_beta)
 
-        self.T = 1000
+        if quan_bias is not None:
+            self.init_biases(init_data=boundary)
+        if init_beta is not None:
+            self.init_alpha_and_beta(init_beta=init_beta)
+
+        self.T = init_T
 
     def init_scale_and_offset(self):
         """
@@ -124,39 +93,76 @@ class Quantization(nn.Module):
 
         self.offset = 0.5 * np.array(self.scales).sum()
 
-    def init_biases(self, init_data):
+    def init_biases(self, input=None, init_data=None):
         """
         Initialize the bias of quantization function.
         init_data in numpy format.
         """
         # activations initialization (obtained offline)
+        if init_data is None:
+            assert (
+                input is not None
+            ), "Provide an initial input for bias or an input to initialize"
+            centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=10)[0]
+            centers = centers[np.argsort(centers)]
+            # print(centers)
+            init_data = (centers[:-1] + centers[1:]) / 2
+
         assert init_data.size == self.n
         self.biases.copy_(torch.from_numpy(init_data))
         self.bias_inited = True
         # print('baises inited!!!')
 
-    def init_alpha_and_beta(self, init_beta):
+    def init_alpha_and_beta(self, input=None, init_beta=None):
         """
         Initialize the alpha and beta of quantization function.
         init_data in numpy format.
         """
-        # activations initialization (obtained offline)
+        # activations initialization (obtained offline)\
+
+        if init_beta is None:
+            assert (
+                input is not None
+            ), "Provide an initial input for beta or an input to initialize"
+            init_beta = np.abs(self.values).max() / input.abs().max()
+
         self.beta.data = torch.Tensor([init_beta]).to(self.device)
         self.alpha.data = torch.reciprocal(self.beta.data)
         self.alpha_beta_inited = True
 
     def forward(self, input):
         # print(input)
-        assert self.bias_inited
-        input = input.mul(self.beta)
+        t_0 = time()
+        if not self.alpha_beta_inited:
+            self.init_alpha_and_beta(input)
+        # print("t1 : ", time() - t_0)
+
+        input = input * self.beta
+        if not self.bias_inited:
+            self.init_biases(input)
+
+        # print("t2 : ", time() - t_0)
+
         if self.training:
-            assert self.alpha_beta_inited
             output = sigmoidT(input, self.scales, self.n, self.biases, self.T)
+            # print("t3 : ", time() - t_0)
         else:
             output = step(input, b=self.biases[0]) * self.scales[0]
             for i in range(1, self.n):
                 step_res = step(input, b=self.biases[i]) * self.scales[i]
                 output += step_res
 
-        output = output.mul(self.alpha) - self.offset
+        output = (output - self.offset) * self.alpha
+        # print("t4 : ", time() - t_0)
+
         return output
+
+    def __repr__(self):
+        return (
+            super().__repr__()
+            + "\n (n_bits : {})".format(int(np.log2(self.n)))
+            # + "(\n biases : {})".format(self.biases)
+            + "\n (alpha : {})".format(self.alpha.cpu().data.item())
+            + "\n (beta : {})".format(self.beta.cpu().data.item())
+            + "\n (T : {})".format(self.T)
+        )
