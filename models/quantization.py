@@ -103,7 +103,7 @@ class Quantization(nn.Module):
             assert (
                 input is not None
             ), "Provide an initial input for bias or an input to initialize"
-            centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=10)[0]
+            centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=5)[0]
             centers = centers[np.argsort(centers)]
             # print(centers)
             init_data = (centers[:-1] + centers[1:]) / 2
