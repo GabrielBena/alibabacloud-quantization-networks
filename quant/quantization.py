@@ -11,9 +11,10 @@ import pickle
 from torch.nn.parameter import Parameter
 import numpy as np
 import pdb
-from models.sigmoid import SigmoidT
 from sklearn.cluster import KMeans
 from time import time
+
+from quant.sigmoid import SigmoidT
 
 sigmoidT = SigmoidT.apply
 

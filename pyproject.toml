@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quant"
+readme = "README.md"
+
+dependencies = ["numpy", "matplotlib", "ipykernel", "ipywidgets", "tqdm", "scikit-learn"]
+dynamic = ["version"]
+
+[tool.setuptools]
+packages = ["quant"]
