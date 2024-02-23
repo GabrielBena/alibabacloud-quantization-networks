@@ -168,4 +168,5 @@ class Quantization(nn.Module):
             + "\n (alpha : {})".format(self.alpha.cpu().data.item())
             + "\n (beta : {})".format(self.beta.cpu().data.item())
             + "\n (T : {})".format(self.T)
+            + "\n (Inference Mode : {})".format(not self.training)
         )

@@ -27,10 +27,10 @@ class Net(nn.Module):
     def forward(self, x):
 
         for name, module in self.modules_dict.items():
-            if isinstance(module, nn.Linear) and len(x.shape) > 2:
+            if (isinstance(module, nn.Linear) or (isinstance(module, nn.Sequential) and isinstance(module[0], nn.Linear))) and len(x.shape) > 2:
                 x = x.view(x.size(0), -1)
             x = module(x)
-            # print(x.unique().shape)
+            # print(name, x.shape, x.unique().shape)
         output = F.log_softmax(x, dim=1)
         return output
 
@@ -60,36 +60,37 @@ class QuantizedModel(nn.Module):
 
     def __init__(self, model, n_bits=4, quantize_activations=False):
         super().__init__()
+        self.quantized = True
         self.model = copy.deepcopy(model)
         self.n_bits = n_bits
         self.quantize_activations = quantize_activations
 
         for n, m in self.model.named_modules():
             if hasattr(m, "weight") and (not "parametrizations" in n):
-                print(n)
                 rpm(m, "weight", QuantizedModule(self.n_bits))
                 if quantize_activations:
-                    m = nn.Sequential(m, QuantizedModule(n_bits))
+                    self.model.modules_dict[n.split(".")[-1]] = nn.Sequential(m, QuantizedModule(n_bits))
 
     def forward(self, x):
         return self.model(x)
 
     def set_temperature(self, T):
         for m in self.modules():
-            if hasattr(m, "parametrizations"):
-                m.parametrizations.weight[0].quant.T = T
+            if hasattr(m, "quant"):
+                # m.parametrizations.weight[0].quant.T = T
+                m.quant.T = T
 
     def set_training(self, training):
         for m in self.modules():
-            if hasattr(m, "parametrizations"):
-                m.parametrizations.weight[0].quant.training = training
+            if hasattr(m, "quant"):
+                # m.parametrizations.weight[0].quant.training = training
+                m.quant.training = training
 
     @property
     def original_weights(self):
         return {
             n: m.parametrizations.weight.original
-            for n, m in self.named_modules()
-            if hasattr(m, "parametrizations")
+            for n, m in self.modules_dict.items()
         }
 
     @property
