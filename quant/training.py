@@ -5,13 +5,13 @@ import torch
 def train(model, device, train_loader, optimizer, epoch, **kwargs):
     model.train()
     train_losses, train_accs = [], []
-    if hasattr(model, "quant"):
-        model.set_training(True)
+    if hasattr(model, "set_inference"):
+        model.set_inference(False)
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
 
@@ -45,15 +45,15 @@ def train(model, device, train_loader, optimizer, epoch, **kwargs):
 
 def test(model, device, test_loader, pbar=None):
     model.eval()
-    if hasattr(model, "quant"):
-        model.set_training(False)
+    if hasattr(model, "set_inference"):
+        model.set_inference(True)
     test_loss = 0
     correct = 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += F.nll_loss(
+            test_loss += F.cross_entropy(
                 output, target, reduction="sum"
             ).item()  # sum up batch loss
             pred = output.argmax(

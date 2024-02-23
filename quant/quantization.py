@@ -58,6 +58,11 @@ class Quantization(nn.Module):
             register_buffer: params w/o grad, do not need to be learned
             example shown in: https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/batchnorm.py
         """
+
+        if isinstance(quant_values, int):
+            quant_values = np.linspace(
+                -(2 ** (quant_values - 1)), 2 ** (quant_values - 1) - 1, 2**quant_values
+            )
         self.values = quant_values
 
         # number of sigmoids
@@ -80,6 +85,8 @@ class Quantization(nn.Module):
 
         self.T = init_T
 
+        self.inference = True
+
     def init_scale_and_offset(self):
         """
         Initialize the scale and offset of quantization function.
@@ -100,6 +107,7 @@ class Quantization(nn.Module):
             assert (
                 input is not None
             ), "Provide an initial input for bias or an input to initialize"
+            n_clusters = min(self.n + 1, input.unique().numel())
             estimator = KMeans(n_clusters=self.n + 1, n_init=10, max_iter=10)
             # centers = kmeans(input.cpu().data.numpy().flatten(), self.n + 1, iter=10)[0]
             params = np.sort(input.cpu().data.numpy().reshape(-1, 1), axis=0)
@@ -146,7 +154,7 @@ class Quantization(nn.Module):
 
         # print("t2 : ", time() - t_0)
 
-        if self.training:
+        if not self.inference:
             output = sigmoidT(input, self.scales, self.n, self.biases, self.T)
             # print("t3 : ", time() - t_0)
         else:
@@ -168,5 +176,5 @@ class Quantization(nn.Module):
             + "\n (alpha : {})".format(self.alpha.cpu().data.item())
             + "\n (beta : {})".format(self.beta.cpu().data.item())
             + "\n (T : {})".format(self.T)
-            + "\n (Inference Mode : {})".format(not self.training)
+            + "\n (Inference Mode : {})".format(self.inference)
         )

@@ -2,12 +2,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.parametrize import register_parametrization as rpm
 from quant.quantization import Quantization
-import numpy as np
 import copy
 
 
 class Net(nn.Module):
-    def __init__(self, n_bits=None, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__()
 
         self.modules_dict = nn.ModuleDict(
@@ -24,36 +23,30 @@ class Net(nn.Module):
             }
         )
 
+        self.dropout = kwargs.get("dropout", 0)
+
     def forward(self, x):
 
         for name, module in self.modules_dict.items():
-            if (isinstance(module, nn.Linear) or (isinstance(module, nn.Sequential) and isinstance(module[0], nn.Linear))) and len(x.shape) > 2:
+            if (
+                isinstance(module, nn.Linear)
+                or (
+                    isinstance(module, nn.Sequential)
+                    and isinstance(module[0], nn.Linear)
+                )
+            ) and len(x.shape) > 2:
                 x = x.view(x.size(0), -1)
             x = module(x)
+            if self.dropout > 0 and "fc" in name:
+                x = F.dropout(x, p=self.dropout, training=self.training)
+
             # print(name, x.shape, x.unique().shape)
-        output = F.log_softmax(x, dim=1)
-        return output
+
+        return x
 
 
-class QuantizedModule(nn.Module):
-    """
-    Parametrization of the weights of a layer with quantization
-
-    Args:
-        mask (torch.tensor): mask for the weights
-    """
-
-    def __init__(self, n_bits):
-        super().__init__()
-        self.quant_values = np.linspace(
-            -(2 ** (n_bits - 1)), 2 ** (n_bits - 1) - 1, 2**n_bits
-        )
-        self.quant = Quantization(
-            quant_values=self.quant_values,
-        )
-
-    def forward(self, W):
-        return self.quant(W)
+def compose2(f, g):
+    return lambda *a, **kw: f(g(*a, **kw))
 
 
 class QuantizedModel(nn.Module):
@@ -66,31 +59,34 @@ class QuantizedModel(nn.Module):
         self.quantize_activations = quantize_activations
 
         for n, m in self.model.named_modules():
-            if hasattr(m, "weight") and (not "parametrizations" in n):
-                rpm(m, "weight", QuantizedModule(self.n_bits))
+            if (
+                hasattr(m, "weight")
+                and (not "parametrizations" in n)
+                and (m.weight.numel() > 1)
+            ):
+                rpm(m, "weight", Quantization(self.n_bits))
                 if quantize_activations:
-                    self.model.modules_dict[n.split(".")[-1]] = nn.Sequential(m, QuantizedModule(n_bits))
+                    m.quant = Quantization(n_bits)
+                    m.original_forward = copy.deepcopy(m.forward)
+                    m.forward = compose2(m.quant.forward, m.forward)
 
     def forward(self, x):
         return self.model(x)
 
     def set_temperature(self, T):
         for m in self.modules():
-            if hasattr(m, "quant"):
-                # m.parametrizations.weight[0].quant.T = T
-                m.quant.T = T
+            if hasattr(m, "T"):
+                m.T = T
 
-    def set_training(self, training):
+    def set_inference(self, inference):
         for m in self.modules():
-            if hasattr(m, "quant"):
-                # m.parametrizations.weight[0].quant.training = training
-                m.quant.training = training
+            if hasattr(m, "inference"):
+                m.inference = inference
 
     @property
     def original_weights(self):
         return {
-            n: m.parametrizations.weight.original
-            for n, m in self.modules_dict.items()
+            n: m.parametrizations.weight.original for n, m in self.modules_dict.items()
         }
 
     @property
